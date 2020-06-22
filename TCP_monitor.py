@@ -35,7 +35,7 @@ class TCP_monitor():
         self.connected = False
 
     async def connectServer(self, host, port, key):
-        while True:
+        while 1:
             try:
                 reader, writer = await asyncio.open_connection(host, port)
                 self._reader = reader
@@ -44,25 +44,22 @@ class TCP_monitor():
                 await self.send_bytes(self.Auth_Key(key))
                 self.connected = True
             except Exception:
-                Printer().printer(f'连接无法建立，请检查本地网络状况,2s后重连', "Error", "red")
+                Printer().printer(f'连接无法建立，请检查本地网络状况,5s后重连', "Error", "red")
                 self.connected = False
-                await asyncio.sleep(2)
-                continue
+                await asyncio.sleep(5)
             await self.ReceiveMessageLoop()
-            Printer().printer(f'与服务器连接断开,2s后尝试重连', "Error", "red")
+            Printer().printer(f'与服务器连接断开,5s后尝试重连', "Error", "red")
             self.connected = False
-            await asyncio.sleep(2)
+            await asyncio.sleep(5)
 
     async def HeartbeatLoop(self):
         while True:
-            try:
-                while not self.connected:
-                    await asyncio.sleep(0.5)
-                while self.connected:
-                    await self.send_bytes(self.Heartbeat())
-                    await asyncio.sleep(25)
-            except:
-                traceback.print_exc()
+            while not self.connected:
+                await asyncio.sleep(0.5)
+            while self.connected:
+                await self.send_bytes(self.Heartbeat())
+                await asyncio.sleep(25)
+            await asyncio.sleep(1)
 
     def Auth_Key(self, key):
         dict_enter = {
@@ -100,46 +97,35 @@ class TCP_monitor():
         except Exception:
             Printer().printer("与服务器连接断开", "Error", "red")
             self.connected = False
+            await asyncio.sleep(5)
             return False
         if len(header) == 0:
             return False
-        try:
-            len_body, = self.header_struct.unpack_from(header)
-        except:
-            Printer().printer(f"unpack_from出现错误,header:{header} len(header):{len(header)}", "Error", "red")
-            self.connected = False
-            return False
+        len_body, = self.header_struct.unpack_from(header)
         if not len_body:
-            return False
+            return True
         try:
             body = await self._reader.read(len_body - 4)
-            Printer().printer(f"接收到服务器的header数据{header} body数据{body}", "DEBUG", "yellow")
         except Exception:
             Printer().printer("与服务器连接断开", "Error", "red")
             self.connected = False
+            await asyncio.sleep(5)
             return False
+        body = body.decode('utf-8')
+        body = body.replace("True", "true").replace("False", "false").replace("None", "null")
         if body is None:
-            return False
-        try:
-            body = body.decode('utf-8')
-            body = body.replace("True", "true").replace("False", "false").replace("None", "null")
-        except:
-            Printer().printer(f"body.decode出现错误,body:{body}", "Error", "red")
-            self.connected = False
             return False
         try:
             json_data = json.loads(body)
             await self.parseDanMu(json_data)
         except Exception:
-            Printer().printer(f"json.loads出现错误,body:{body}", "Error", "red")
-            self.connected = False
-            return False
+            Printer().printer(f'Failed when parsing: {body}\n{traceback.format_exc()}', "Error", "red")
         return True
 
     async def ReceiveMessageLoop(self):
-        while self.connected:
+        while self.connected == True:
             tmp = await self.ReadSocketData()
-            if not tmp:
+            if tmp == False:
                 break
 
     async def parseDanMu(self, dic):
@@ -148,15 +134,23 @@ class TCP_monitor():
         if cmd is None:
             Printer().printer(dic, "Error", "red")
             return
+
         if cmd == 'HeartBeat':
-            pass
+            print(dic)
         elif cmd == 'Storm':
             pass
         elif cmd == 'Guard':
+            print(dic)
             await GuardLottery().guard_join(dic["data"]["RoomId"], dic["data"]["Id"])
         elif cmd == 'PKLottery':
+            print(dic)
             await PKLottery().pk_join(dic["data"]["RoomId"], dic["data"]["Id"])
         elif cmd == 'Raffle':
+            print(dic)
             Rafflehandler().append2list_TV(dic["data"]["RoomId"])
+        elif cmd == 'AnchorLottery':
+            pass
+
         else:
             Printer().printer(dic, "Info", "green")
+
