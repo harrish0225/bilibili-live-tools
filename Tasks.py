@@ -6,6 +6,7 @@ import traceback
 import os
 import configloader
 import utils
+import ast
 from printer import Printer
 
 
@@ -32,12 +33,6 @@ class Tasks:
         response = await bilibili().get_dosign()
         temp = await response.json(content_type=None)
         Printer().printer(f"签到状态:{temp['message']}", "Info", "green")
-
-    # 领取每日任务奖励
-    async def Daily_Task(self):
-        response2 = await bilibili().get_dailytask()
-        json_response2 = await response2.json()
-        Printer().printer(f"双端观看直播:{json_response2['msg']}", "Info", "green")
 
     # 应援团签到
     async def link_sign(self):
@@ -85,6 +80,8 @@ class Tasks:
             #     id = json_res['data'][j]['id']
             #     temp_dic[id] = price
             temp_dic = {1: 100, 6: 1000}
+            if self.dic_user['send_exheart']['on/off'] == "1":
+                temp_dic = {1: 100, 6: 1000, 30607: 5000}
             x, temp = await utils.fetch_bag_list(printer=False)
             roomid = a[0]
             today_feed = a[1]
@@ -118,23 +115,81 @@ class Tasks:
             json_response1 = await response1.json()
             print(json_response0['msg'], json_response1['msg'])
 
+    async def coin2silver(self):
+        if self.dic_user['coin2silver']['on/off'] == '1' and int(self.dic_user['coin2silver']['num']) > 0:
+            response = await bilibili().coin2silver_web(self.dic_user['coin2silver']['num'])
+            json_response = await response.json()
+            Printer().printer(f"硬币兑换银瓜子状态:{json_response['msg']}", "Info", "green")
+
     async def sliver2coin(self):
         if self.dic_user['coin']['on/off'] == '1':
             response1 = await bilibili().silver2coin_app()
             json_response1 = await response1.json()
             Printer().printer(f"银瓜子兑换硬币状态:{json_response1['msg']}", "Info", "green")
 
+    async def refresh_medals(self):
+        if self.dic_user['refresh_medals']['on/off'] == '1':
+            await utils.refresh_all_gray_medals()
+
+    async def refresh_medals_by_roomid(self):
+        if self.dic_user['refresh_medals_by_roomid']['on/off'] == "1":
+            roomids = ast.literal_eval(self.dic_user['refresh_medals_by_roomid']['room_ids'])
+            await utils.refresh_medals_by_roomids(roomids)
+
+    async def get_rooms(self):
+        room_ids = []
+        for _ in range(3):
+            response = await bilibili().request_fetchmedal()
+            json_response = await response.json(content_type=None)
+            if json_response['code']:
+                continue
+            # 有时候dict获取不完整，包括最后一项"roomid"的后半部分缺失
+            elif all(["roomid" not in medal for medal in json_response['data']['fansMedalList']]):
+                continue
+            else:
+                break
+
+        for i in range(0, len(json_response['data']['fansMedalList'])):
+            short_room_id = json_response['data']['fansMedalList'][i]['roomid']
+            response1 = await bilibili().get_room_info(short_room_id)
+            json_response1 = await response1.json(content_type=None)
+            long_room_id = json_response1['data']['room_info']['room_id']
+            room_ids.append(long_room_id)
+        return room_ids
+
+    async def XE_heartbeat(self, room_ids, room_id):
+        index_num = round(24 / len(room_ids))
+        data = await bilibili().heart_beat_e(room_id)
+        for index in range(1, index_num + 1):
+            try:
+                # print(f"房间{room_id}休眠{data['heartbeat_interval']}s后开始第 {index} 次")
+                await asyncio.sleep(data['heartbeat_interval'])
+                response = await bilibili().heart_beat_x(index, data, room_id)
+                response = await response.json(content_type=None)
+                data['ets'] = response['data']['timestamp']
+                data['secret_key'] = response['data']['secret_key']
+                data['heartbeat_interval'] = response['data']['heartbeat_interval']
+            except:
+                pass
+
     async def run(self):
         while 1:
             try:
                 Printer().printer(f"开始执行每日任务", "Info", "green")
                 await self.DoSign()
+                room_ids = await self.get_rooms()
+                coroutine_list = []
+                for room_id in room_ids:
+                    coroutine_list.append(self.XE_heartbeat(room_ids, room_id))
+                if coroutine_list:
+                    await asyncio.wait(coroutine_list)
+                await self.refresh_medals_by_roomid()
+                await self.refresh_medals()
                 await self.Daily_bag()
-                await self.Daily_Task()
                 await self.link_sign()
                 await self.send_gift()
                 await self.sliver2coin()
-                await self.doublegain_coin2silver()
+                await self.coin2silver()
                 await self.auto_send_gift()
                 await utils.reconnect()
                 await asyncio.sleep(21600)

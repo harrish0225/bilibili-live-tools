@@ -8,6 +8,7 @@ import time
 import requests
 import rsa
 import base64
+import uuid
 from urllib import parse
 from printer import Printer
 import aiohttp
@@ -140,10 +141,24 @@ class bilibili():
         response = await self.bili_section_post(url, data=data, headers=self.dic_bilibili['pcheaders'])
         return response
 
+    # 1:450兑换
+    async def coin2silver_web(self, num):
+        url = "https://api.live.bilibili.com/pay/v1/Exchange/coin2silver"
+        data = {
+            "num": int(num),
+            "platform": 'pc',
+            "csrf_token": self.dic_bilibili['csrf'],
+            "csrf": self.dic_bilibili['csrf']
+        }
+        response = await self.bili_section_post(url, data=data, headers=self.dic_bilibili['pcheaders'])
+        return response
+
     async def post_watching_history(self, room_id):
         data = {
             "room_id": room_id,
-            "csrf_token": self.dic_bilibili['csrf']
+            "platform": 'pc',
+            "csrf_token": self.dic_bilibili['csrf'],
+            "csrf": self.dic_bilibili['csrf']
         }
         url = "https://api.live.bilibili.com/room/v1/Room/room_entry_action"
         response = await self.bili_section_post(url, data=data, headers=self.dic_bilibili['pcheaders'])
@@ -151,7 +166,11 @@ class bilibili():
 
     async def silver2coin_web(self):
         url = "https://api.live.bilibili.com/exchange/silver2coin"
-        response = await self.bili_section_post(url, headers=self.dic_bilibili['pcheaders'])
+        data = {
+            "csrf_token": self.dic_bilibili['csrf'],
+            "csrf": self.dic_bilibili['csrf']
+        }
+        response = await self.bili_section_post(url, data=data, headers=self.dic_bilibili['pcheaders'])
         return response
 
     async def silver2coin_app(self):
@@ -223,12 +242,12 @@ class bilibili():
         return requests.get(url)
 
     async def request_fetchmedal(self):
-        url = 'https://api.live.bilibili.com/i/api/medal?page=1&pageSize=50'
+        url = 'https://api.live.bilibili.com/i/api/medal?page=1&pageSize=168'
         response = await self.bili_section_get(url, headers=self.dic_bilibili['pcheaders'])
         return response
 
     def request_getkey(self):
-        url = 'https://passport.snm0516.aisee.tv/api/oauth2/getKey'
+        url = 'https://passport.bilibili.com/api/oauth2/getKey'
         temp_params = 'appkey=' + self.dic_bilibili['appkey']
         sign = self.calc_sign(temp_params)
         params = {'appkey': self.dic_bilibili['appkey'], 'sign': sign}
@@ -414,12 +433,9 @@ class bilibili():
         response = await self.bili_section_get(url, headers=self.dic_bilibili['pcheaders'])
         return response
 
-    async def guard_list(self):
-        url = "http://118.25.108.153:8080/guard"
-        headers = {
-            "User-Agent": "bilibili-live-tools/" + str(self.dic_bilibili['uid'])
-        }
-        response = requests.get(url, headers=headers, timeout=10)
+    async def get_room_info(self, roomid):
+        url = f"https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id={roomid}"
+        response = await self.bili_section_get(url, headers=self.dic_bilibili['pcheaders'], timeout=3)
         return response
 
     async def pk_list(self):
@@ -437,7 +453,7 @@ class bilibili():
         return response
 
     async def get_gift_of_lottery(self, i, g):
-        url1 = 'https://api.live.bilibili.com/lottery/v1/box/draw?aid=' + \
+        url1 = 'https://api.live.bilibili.com/xlive/lottery-interface/v2/Box/draw?aid=' + \
                str(i) + '&number=' + str(g + 1)
         response1 = await self.bili_section_get(url1, headers=self.dic_bilibili['pcheaders'])
         return response1
@@ -482,12 +498,6 @@ class bilibili():
         url = 'https://api.live.bilibili.com/sign/doSign'
         response = await self.bili_section_get(url, headers=self.dic_bilibili['pcheaders'])
         return response
-
-    async def get_dailytask(self):
-        url = 'https://api.live.bilibili.com/activity/v1/task/receive_award'
-        payload2 = {'task_id': 'double_watch_task'}
-        response2 = await self.bili_section_post(url, data=payload2, headers=self.dic_bilibili['appheaders'])
-        return response2
 
     async def get_grouplist(self):
         url = "https://api.vc.bilibili.com/link_group/v1/member/my_groups"
@@ -545,3 +555,88 @@ class bilibili():
         url = "http://api.live.bilibili.com/room/v1/Area/getList"
         response = await self.bili_section_get(url)
         return response
+
+    async def heart_beat_e(self, room_id):
+        response = await self.get_room_info(room_id)
+        json_response = await response.json(content_type=None)
+        parent_area_id = json_response['data']['room_info']['parent_area_id']
+        area_id = json_response['data']['room_info']['area_id']
+
+        url = 'https://live-trace.bilibili.com/xlive/data-interface/v1/x25Kn/E'
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': 'https://live.bilibili.com',
+            'Referer': f'https://live.bilibili.com/{room_id}',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36',
+            'Cookie': self.dic_bilibili['cookie'],
+        }
+        payload = {
+            'id': [parent_area_id, area_id, 0, room_id],
+            'device': f'["{self.calc_sign(str(uuid.uuid4()))}","{uuid.uuid4()}"]',
+            'ts': int(time.time()) * 1000,
+            'is_patch': 0,
+            'heart_beat': [],
+            'ua': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.163 Safari/537.36',
+            'csrf_token': self.dic_bilibili['csrf'],
+            'csrf': self.dic_bilibili['csrf'],
+            'visit_id': ''
+        }
+        data = parse.urlencode(payload)
+        # {"code":0,"message":"0","ttl":1,"data":{"timestamp":1595342828,"heartbeat_interval":300,"secret_key":"seacasdgyijfhofiuxoannn","secret_rule":[2,5,1,4],"patch_status":2}}
+        response = await self.bili_section_post(url, headers=headers, data=data)
+        response = await response.json(content_type=None)
+        payload['ets'] = response['data']['timestamp']
+        payload['secret_key'] = response['data']['secret_key']
+        payload['heartbeat_interval'] = response['data']['heartbeat_interval']
+        payload['secret_rule'] = response['data']['secret_rule']
+        return payload
+
+    async def heart_beat_x(self, index, payload, room_id):
+        response = await self.get_room_info(room_id)
+        json_response = await response.json(content_type=None)
+        parent_area_id = json_response['data']['room_info']['parent_area_id']
+        area_id = json_response['data']['room_info']['area_id']
+        url = 'https://live-trace.bilibili.com/xlive/data-interface/v1/x25Kn/X'
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': 'https://live.bilibili.com',
+            'Referer': f'https://live.bilibili.com/{room_id}',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36',
+            'Cookie': self.dic_bilibili['cookie'],
+        }
+        s_data = {
+            "t": {
+                'id': [parent_area_id, area_id, index, room_id],
+                "device": payload['device'],  # LIVE_BUVID
+                "ets": payload['ets'],
+                "benchmark": payload['secret_key'],
+                "time": payload['heartbeat_interval'],
+                "ts": int(time.time()) * 1000,
+                "ua": payload['ua']
+            },
+            "r": payload['secret_rule']
+        }
+        t = s_data['t']
+        payload = {
+            's': self.generate_s(s_data),
+            'id': t['id'],
+            'device': t['device'],
+            'ets': t['ets'],
+            'benchmark': t['benchmark'],
+            'time': t['time'],
+            'ts': t['ts'],
+            "ua": t['ua'],
+            'csrf_token': self.dic_bilibili['csrf'],
+            'csrf': self.dic_bilibili['csrf'],
+            'visit_id': '',
+        }
+        payload = parse.urlencode(payload)
+        # {"code":0,"message":"0","ttl":1,"data":{"heartbeat_interval":300,"timestamp":1595346846,"secret_rule":[2,5,1,4],"secret_key":"seacasdgyijfhofiuxoannn"}}
+        response = await self.bili_section_post(url, headers=headers, data=payload)
+        return response
+
+    # 加密s
+    def generate_s(self, data):
+        url = 'http://127.0.0.1:3000/enc'
+        response = requests.post(url, json=data).json()
+        return response['s']
